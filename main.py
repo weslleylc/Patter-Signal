@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """
+<<<<<<< HEAD
 Created on Tue Jan 29 16:47:36 2019
 
 @author: Weslley L. Caldas
