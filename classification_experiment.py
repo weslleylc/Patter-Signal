@@ -13,7 +13,7 @@ import mat4py
 import matplotlib.pyplot as plt
 from scipy.signal import find_peaks
 from matmodel import utils, feature_builder as fb
-import pickle
+
 
 
 def main():
@@ -22,52 +22,47 @@ def main():
     list_ecg = dataset['signal'][:n]
     list_peaks = dataset['peaks'][:n]
     list_labels = dataset['label'][:n]
+    
+    list_of_packets = []
 
-    norm_parameter = list(zip(np.linspace(3, 13, 10), np.linspace(3, 13, 10)))
-    norm_lenght = list(zip(np.linspace(15, 20, 5), np.linspace(15, 20, 5)))
-    parameter = list(zip(np.linspace(3, 13, 10), np.linspace(3, 13, 10)))
-    lenght = list(zip(np.linspace(15, 20, 5), np.linspace(15, 20, 5)))
+    for (sig, peak) in zip(list_ecg,list_peaks):
+        list_of_packets.append(fb.DefaultPacket(sig, peak))
+        
+    my_ecg = fb.ECG.build_from_packets(list_of_packets)
+    list_ecg = my_ecg.buildPackets(25, fb.DefaultPacket)
 
-    template_gaussian = fb.TemplateEvaluetor(fb.Gaussian(),
-                                             norm_parameter, norm_lenght)
-    template_mexican = fb.TemplateEvaluetor(fb.MexicanHat(), parameter, lenght)
-    template_rayleigh = fb.TemplateEvaluetor(fb.Rayleigh(), parameter, lenght)
+    norm_parameter = dict()
+    norm_parameter['values'] = list(zip(np.linspace(3, 13, 10),
+                                    np.linspace(3, 13, 10)))
+    norm_parameter['lenght'] = list(zip(np.linspace(15, 20, 5),
+                                    np.linspace(15, 20, 5)))
+    parameter = dict()
+    parameter['values'] = list(zip(np.linspace(3, 13, 10),
+                               np.linspace(3, 13, 10)))
+    parameter['lenght'] = list(zip(np.linspace(15, 20, 5),
+                               np.linspace(15, 20, 5)))
+
+    template_gaussian = fb.TemplateEvaluetor(fb.Gaussian(), norm_parameter)
+    template_mexican = fb.TemplateEvaluetor(fb.MexicanHat(), parameter)
+    template_rayleigh = fb.TemplateEvaluetor(fb.Rayleigh(), parameter)
     template_left_rayleigh = fb.TemplateEvaluetor(fb.LeftInverseRayleigh(),
-                                                  parameter, lenght)
+                                                  parameter)
     template_right_rayleigh = fb.TemplateEvaluetor(fb.RightInverseRayleigh(),
-                                                   parameter, lenght)
+                                                   parameter)
 
     list_of_templates = [template_gaussian, template_mexican,
                          template_rayleigh, template_left_rayleigh,
                          template_right_rayleigh]
 
-    result = utils.evaluete_models(utils.consume_process,
-                                   list_ecg, list_of_templates,list_peaks)
-    names = ['left_error', 'left_value', 'left_length',
-             'right_error', 'right_value', 'right_length']
+    lst_of_packets = utils.mp_signal_apply(utils.consume_packet_helper,
+                                   list_ecg, list_of_templates)
 
-    columns = []
-    for t in list_of_templates:
-        current_name = t.mat_model.__class__.__name__
-        columns.extend([x + current_name for x in names])
-
-    df = pd.DataFrame(result, columns=columns)
-    df['labels'] = list_labels
-    return df
+    my_ecg.packets = lst_of_packets
+    return my_ecg
 
 
 if __name__ == '__main__':
     __spec__ = "ModuleSpec(name='builtins', loader=<class '_frozen_importlib.BuiltinImporter'>)"
     results = main()
-
-#
-#
-#dataset = mat4py.loadmat('./data/morfology.mat')
-#for i in range(600):
-#    dataset['signal'][i] = [item for sublist in dataset['signal'][i] for item in sublist]
-#     
-#np.save('morfology.npy', dataset)
-#dataset = np.load('./data/morfology.npy').item()
-
-
+    error = results.getErrorsTable()
 

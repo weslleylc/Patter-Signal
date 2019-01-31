@@ -49,7 +49,7 @@ class DefaultSignal():
         self.indicators = indicators
         self.packets = []
 
-    def buildPackets(self, bandwidth, container):
+    def build_packets(self, bandwidth, container):
         if self.indicators[0] - bandwidth <= 0:
             raise ValueError('The bandwith must be'
                              + 'less than the first indicator')
@@ -60,7 +60,7 @@ class DefaultSignal():
         self.packets = packets
         return self.packets
 
-    def getErrorsTable(self, normalized=True, normalizer=MinMaxScaler()):
+    def get_errors_table(self, normalized=True, normalizer=MinMaxScaler()):
         if not self.packets[0].errors:
             raise PacktesNotInitiated
         else:
@@ -74,9 +74,50 @@ class DefaultSignal():
                 array = normalizer.fit_transform(array)
                 array = np.matrix.flatten(array, 'F')
                 list_of_arrays.append(array)
-                
             df = pd.DataFrame(data=np.array(list_of_arrays), columns=columns)
             return df
+
+    def get_signals(self, normalized=True, normalizer=MinMaxScaler()):
+        list_of_arrays = []
+
+        for packet in self.packets:
+            if normalized:
+                list_of_arrays.append(MinMaxScaler.fit_transform(
+                                      packet.input_signal))
+            else:
+                list_of_arrays.append(packet.input_signal)
+
+        return list_of_arrays
+
+    def get_signals_and_models(self, normalized=True,
+                               normalizer=MinMaxScaler()):
+        list_of_signals = []
+        list_of_models = []
+        for packet in self.packets:
+            if normalized:
+                list_of_signals.append(MinMaxScaler.fit_transform(
+                                      packet.input_signal))
+            else:
+                list_of_signals.append(packet.input_signal)
+            model = [item for sublist in packet.input_signal
+                     for item in sublist]
+            list_of_signals.append(model)
+
+        return list_of_signals, list_of_models
+
+    @classmethod
+    def build_from_packets(cls, list_of_packets, ts=None, filtered=None,
+                           heart_rate_ts=None, heart_hate=None,
+                           templates_ts=None, templates=None,
+                           is_filtered=False):
+        list_of_signal = []
+        list_of_peaks = []
+        for packet in list_of_packets:
+            list_of_signal.append(packet.input_signal)
+            list_of_peaks.append(packet.peak_signal)
+        array = np.array(list_of_signal)
+        array = np.matrix.flatten(array, 'F')
+        return cls(array, list_of_peaks)
 
 
 class ECG(DefaultSignal):
@@ -101,6 +142,9 @@ class ECG(DefaultSignal):
         self.heart_hate = heart_hate
         self.templates_ts = templates_ts
         self.templates = templates
+        
+
+
 
 
 class MathematicalModel():

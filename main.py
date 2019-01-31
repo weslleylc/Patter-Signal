@@ -20,7 +20,7 @@ def main():
 
     my_ecg = fb.ECG(input_signal=filtered, indicators=rpeaks,
                     is_filtered=False)
-    list_ecg = my_ecg.buildPackets(25, fb.DefaultPacket)
+    list_ecg = my_ecg.build_packets(25, fb.DefaultPacket)
 
     norm_parameter = dict()
     norm_parameter['values'] = list(zip(np.linspace(3, 13, 10),
