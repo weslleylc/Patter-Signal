@@ -6,13 +6,41 @@ Created on Sat Jan 26 15:51:11 2019
 """
 
 import numpy as np
+import pandas as pd
 import math
 import matplotlib.pyplot as plt
 from scipy import signal as sci_signal
 from sklearn.metrics import mean_squared_error
 from sklearn.preprocessing import MinMaxScaler
 
-import multiprocessing as mp
+
+
+# define Python user-defined exceptions
+class Error(Exception):
+   """Base class for other exceptions"""
+   pass
+
+class PacktesNotInitiated(Error):
+   """Raised when the pakctes are not initiated."""
+   pass
+
+
+"""REMOVER ESSA CLASSE"""
+class TemplateEvaluetor():
+    def __init__(self, mat_model, parameters):
+        self.mat_model = mat_model
+        self.parameters = parameters
+
+
+class DefaultPacket():
+    def __init__(self, input_signal, peak_signal=None, models=None,
+                 errors=None, parameters=None, names=None):
+        self.input_signal = input_signal
+        self.peak_signal = peak_signal
+        self.models = models
+        self.parameters = parameters
+        self.errors = errors
+        self.names = names
 
 
 class DefaultSignal():
@@ -21,17 +49,34 @@ class DefaultSignal():
         self.indicators = indicators
         self.packets = []
 
-    def buildPackets(self, bandwidth):
+    def buildPackets(self, bandwidth, container):
         if self.indicators[0] - bandwidth <= 0:
             raise ValueError('The bandwith must be'
                              + 'less than the first indicator')
         packets = []
         for ind in self.indicators:
-            current_input_signal = self.input_signal[(
-                ind-bandwidth):(ind+bandwidth)]
-            packets.append(current_input_signal)
+            packets.append(container(self.input_signal[(
+                           ind-bandwidth):(ind+bandwidth)]))
         self.packets = packets
         return self.packets
+
+    def getErrorsTable(self, normalized=True, normalizer=MinMaxScaler()):
+        if not self.packets[0].errors:
+            raise PacktesNotInitiated
+        else:
+            list_of_arrays = []
+            columns = []
+            for name in self.packets[0].names:
+                for i in range(len(self.packets[0].errors[0])):
+                    columns.append(name + "_" + str(i))
+            for packet in self.packets:
+                array = np.array(packet.errors)
+                array = normalizer.fit_transform(array)
+                array = np.matrix.flatten(array, 'F')
+                list_of_arrays.append(array)
+                
+            df = pd.DataFrame(data=np.array(list_of_arrays), columns=columns)
+            return df
 
 
 class ECG(DefaultSignal):
@@ -67,10 +112,14 @@ class MathematicalModel():
         self.rigth_function = rigth_function
 
     def call(self, *, input_signal, left_value, left_length,
-             right_value, rigth_length):
+             right_value, rigth_length, peak_signal=None):
+
+        if not peak_signal:
+            peak_signal = self.find_peak(input_signal)
 
         (left_input_signal,
-         rigth_input_signal) = self.split_input_signal(input_signal)
+         rigth_input_signal) = self.split_input_signal(input_signal,
+                                                       peak_signal)
 
         model = self.build_model(left_value, left_length,
                                  right_value, rigth_length)
@@ -86,31 +135,67 @@ class MathematicalModel():
         rigth_extend = np.repeat(model[-1], size)
 
         model = np.concatenate((left_extend, model, rigth_extend), axis=0)
-
-        peak_signal = self.find_peak(input_signal)
         peak_model = self.find_peak_model(model)
 
         left_limit = peak_signal
         rigth_limit = size - peak_signal
 
-        model = model[(peak_model-left_limit):(peak_model+rigth_limit)]
-        (model, input_signal) = self.normalize_data(model, input_signal,
-                                                    peak_signal, left_limit)
-        return self.metric(input_signal, model, peak_signal)
-        # return metric(model, input_signal, peak_signal)
+        left_model = model[(peak_model-left_limit):peak_model]
+        right_model = model[peak_model:(peak_model+rigth_limit)]
 
-    def split_input_signal(self, input_signal):
-        """
+        model = model[(peak_model-left_limit):(peak_model+rigth_limit)]
+        (model, input_signal, peak_model) = self.normalize_data(model,
+                                                                input_signal,
+                                                                peak_signal,
+                                                                left_limit)
+
+        (left_error, right_error) = self.metric(input_signal,
+                                                model,
+                                                peak_signal)
+        return_errors = [left_error, right_error]
+        return_model = [left_model, right_model]
+        return (return_model, return_errors)
+
+    def split_input_signal(self, input_signal, peak_signal):
+        """Split the input_signal into two parts.
         This function return a tuple with the left and right part of the
         input_signal, splited on their center.
+        Args:
+            input_signal : array [n_samples]
+                A array that represents a signal
+            peak_signal : int
+                the index that indicate the peak of [input_signal]
+        Returns:
+            (left_signal, right_signal): tuple(array,array)
+                A tuple that contains the calculated left and right
+                parts of the signal
+        Raises:
+            TypeError: An error occurred accessing mean_squared_error.
         """
-        idx_max = np.argmax(input_signal)
-        return (input_signal[:idx_max], input_signal[idx_max:])
+        return (input_signal[:peak_signal], input_signal[peak_signal:])
 
     def metric(self, input_signal, model, peak_signal):
-        """
-        This function return the evaluetion given a siginal and a mathematical
-        model
+        """Compute the evaluetion between input_signal and a math model.
+        The metric function returns a tuple that contains the evaluation of
+        a given signal and a mathematical model. The tuple contains the
+        mean squared error between the left part of the model and the left part
+        of the signal and the right part of the model with the right part
+        of the signal. The split of left and right part's it is made split the
+        signal on their peak. The division of the mathematical model it is made
+        in their middle point.
+        Args:
+            input_signal : array [n_samples]
+                A array that represents a signal
+            model : array [n_samples]
+                A array that represents a mathematical model
+            peak_signal : int
+                the index that indicate the peak of [input_signal]
+        Returns:
+            (left_error, right_error): tuple(float,float)
+                A tuple that contains the calculated left and right
+                mean squared error
+        Raises:
+            TypeError: An error occurred accessing mean_squared_error.
         """
         left_error = mean_squared_error(input_signal[:peak_signal],
                                         model[:peak_signal])
@@ -143,7 +228,7 @@ class MathematicalModel():
                      ).fit_transform(model[peak_model:].reshape(-1, 1))
 
         normalized_model = np.concatenate((left_model, right_model))
-        return (normalized_model, normalized_input_signal)
+        return (normalized_model, normalized_input_signal, len(left_model))
 
     def build_model(self, left_value, left_length,
                     right_value, rigth_length):
@@ -160,15 +245,7 @@ class MathematicalModel():
 class MexicanHat(MathematicalModel):
     def __init__(self):
         super().__init__(sci_signal.ricker, sci_signal.ricker)
-
-
-class Gaussian(MathematicalModel):
-    def __init__(self):
-        super().__init__(self.gaussian_func, self.gaussian_func)
-
-    def gaussian_func(self, n, sigma):
-        x = np.linspace(-n/2, n/2, n)
-        return 1/(sigma*np.sqrt(2*np.pi)) * np.exp((-x**2)/2*sigma**2)
+        self.name = "mexican_hat"
 
 
 class PrintMexicanHat(MexicanHat):
@@ -176,16 +253,24 @@ class PrintMexicanHat(MexicanHat):
         super().__init__()
 
     def metric(self, input_signal, model, peak_signal):
-        """
-        This function return the evaluetion given a siginal and a mathematical
-        model
-        """
+
         return plt.plot(model, '-', input_signal, '-')
+
+
+class Gaussian(MathematicalModel):
+    def __init__(self):
+        super().__init__(self.gaussian_func, self.gaussian_func)
+        self.name = "gaussian"
+
+    def gaussian_func(self, n, sigma):
+        x = np.linspace(-n/2, n/2, n)
+        return 1/(sigma*np.sqrt(2*np.pi)) * np.exp((-x**2)/2*sigma**2)
 
 
 class Rayleigh(MathematicalModel):
     def __init__(self):
         super().__init__(self.rayleigh_func, self.rayleigh_func)
+        self.name = "rayleigh"
 
     def rayleigh_func(self, n, scale):
         x = np.linspace(0, 1, n)
@@ -204,6 +289,7 @@ class Rayleigh(MathematicalModel):
 class LeftInverseRayleigh(Rayleigh):
     def __init__(self):
         super().__init__()
+        self.name = "left_inverse_rayleigh"
 
     def build_model(self, left_value, left_length,
                     right_value, rigth_length):
@@ -218,6 +304,7 @@ class LeftInverseRayleigh(Rayleigh):
 class RightInverseRayleigh(Rayleigh):
     def __init__(self):
         super().__init__()
+        self.name = "right_inverse_rayleigh"
 
     def build_model(self, left_value, left_length,
                     right_value, rigth_length):
@@ -229,59 +316,4 @@ class RightInverseRayleigh(Rayleigh):
         return model
 
 
-class TemplateEvaluetor():
-    def __init__(self, mat_model, parameter, lenght):
-        self.mat_model = mat_model
-        self.parameter = parameter
-        self.lenght = lenght
 
-
-def consume_process(args):
-    print("child")
-    return consume_evaluetor(args[0], args[1], args[2], args[3])
-
-
-def mp_apply(function, list_of_evaluetor, input_signal, workers=2):
-    with mp.Pool(processes=workers) as pool:
-        result = pool.map(function, [(input_signal,
-                                     list_of_evaluetor[index].mat_model,
-                                     list_of_evaluetor[index].parameter,
-                                     list_of_evaluetor[index].lenght)
-                          for index in range(len(list_of_evaluetor))])
-    pool.close()
-    return [item for sublist in result for item in sublist]
-
-
-def evaluete_models(function, packets_of_signals, list_of_evaluetor):
-    evalueted_signals = []
-    for sig in packets_of_signals:
-        input_signal = sig
-        result = mp_apply(function, list_of_evaluetor, input_signal, workers=2)
-        # result = function((list_of_evaluetor[1], input_signal))
-        evalueted_signals.append(result)
-    return evalueted_signals
-
-
-def consume_evaluetor(input_signal, model, parameter, lenght):
-    final_left_error = np.inf
-    final_right_error = np.inf
-
-    for (left_value, right_value) in parameter:
-        for (left_length, rigth_length) in lenght:
-            (left_error, right_error) = model.call(input_signal=input_signal,
-                                                   left_value=left_value,
-                                                   left_length=left_length,
-                                                   right_value=right_value,
-                                                   rigth_length=rigth_length)
-            if final_left_error > left_error:
-                final_left_error = left_error
-                final_left_value = left_value
-                final_left_length = left_length
-
-            if final_right_error > right_error:
-                final_right_error = right_error
-                final_right_value = right_value
-                final_right_length = rigth_length
-
-    return [final_left_error, final_left_value, final_left_length,
-            final_right_error, final_right_value, final_right_length]
