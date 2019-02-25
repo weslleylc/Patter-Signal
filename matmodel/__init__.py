@@ -24,7 +24,6 @@ from .feature_builder import (
      MexicanHat,
      Rayleigh,
      RightInverseRayleigh,
-     TemplateEvaluetor,
  )
 
 
@@ -45,7 +44,6 @@ __all__ = (
     "MexicanHat",
     "Rayleigh",
     "RightInverseRayleigh",
-    "TemplateEvaluetor",
     # utils functions
     "consume_process",
     "consume_evaluetor",

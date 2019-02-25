@@ -7,22 +7,20 @@ Created on Sat Jan 26 15:51:11 2019
 
 import numpy as np
 import pandas as pd
-import math
-import matplotlib.pyplot as plt
 from scipy import signal as sci_signal
 import warnings
 from sklearn.preprocessing import MinMaxScaler
-from matplotlib.pyplot import imshow, pause
-from matmodel import utils
 import json
 
-# define Python user-defined exceptions
+registry = {}
+
+
 class Error(Exception):
     """Base class for other exceptions"""
     pass
 
 
-class PacktesNotInitiated(Error):
+class PacketsNotInitiated(Error):
     """Raised when the pakctes are not initiated."""
     pass
 
@@ -32,20 +30,13 @@ class MissMatchError(Error):
     pass
 
 
-class TemplateEvaluetor():
-    """REMOVER ESSA CLASSE"""
-    def __init__(self, mat_model, parameters):
-        self.mat_model = mat_model
-        self.parameters = parameters
-
-
-registry = {}
-
 def register_class(target_class):
+    """Add the name class in registry dictionary."""
     registry[target_class.__name__] = target_class
 
 
 def deserialize(data):
+    """Call an class inside registry dictionary with data as input."""
     params = json.loads(data)
     name = params['class']
     target_class = registry[name]
@@ -53,6 +44,7 @@ def deserialize(data):
 
 
 class Meta(type):
+    """Metaclass that's add serialization for all classes."""
     def __new__(meta, name, bases, class_dict):
         cls = type.__new__(meta, name, bases, class_dict)
         register_class(cls)
@@ -60,6 +52,7 @@ class Meta(type):
 
 
 class NumpyEncoder(json.JSONEncoder):
+    """Json enconder for numpy array."""
     def default(self, obj):
         if isinstance(obj, np.ndarray):
             return obj.tolist()
@@ -67,10 +60,12 @@ class NumpyEncoder(json.JSONEncoder):
 
 
 class BetterSerializable(object):
+    """Base class for json serialization."""
     def __init__(self, *args):
         self.args = args
 
     def serialize(self):
+        """Just call's dumps from json with name and data class."""
         return json.dumps({
                 'class': self.__class__.__name__,
                 'args': self.args(),
@@ -82,13 +77,36 @@ class BetterSerializable(object):
 
 
 class RegisteredSerializable(BetterSerializable, metaclass=Meta):
+    """Inherits from BetterSerializable and Meta. Base for serialization."""
     pass
 
 
 class DefaultPacket(RegisteredSerializable):
+    """Deftauls class for packet container's.
+
+    This class help's to encapsulate the segmentation in a signal (a hearbeat
+    in ECG, for example). Contains all informations about the metrics utilized
+    in a matemathical model
+
+    Attributes:
+        input_signal: np.array for a segmentation of a whole signal.
+        peak_signal: A int representing the idex of bigger peak.
+        models: A lista of the final models for each matemathical model
+        evalueted.
+        errors. A lista of the final errors for each evaluetion of an
+        matematical model.
+        parameters = the final parameters for the best's evaluetion of all
+        mathemathical model.
+        names: A list with all names for each matematical model utilized
+        is_valey: A boolean that's inform if the bigguer peak is a valey or
+        note.
+        remove_trends: if True remove the mean of the signal
+    """
     def __init__(self, input_signal, peak_signal=None, models=None,
                  errors=None, parameters=None, names=None, is_valey=None,
                  remove_trends=True):
+        """Initialize a packet and asegurate that input signal and models,
+        contains only numpy arrays"""
         input_signal = np.array(input_signal)
         if remove_trends:
             m = np.mean(input_signal[[0, -1]])
@@ -96,6 +114,13 @@ class DefaultPacket(RegisteredSerializable):
 
         self.input_signal = input_signal
         self.peak_signal = peak_signal
+        if type(models) == list:
+            for i, m in enumerate(models):
+                if type(m) == list:
+                    for j, mm in enumerate(m):
+                        models[i][j] = np.array(mm)
+                else:
+                    m = np.array(m)
         self.models = models
         self.parameters = parameters
         self.errors = errors
@@ -105,6 +130,23 @@ class DefaultPacket(RegisteredSerializable):
         self.is_valey = is_valey
 
     def direction_peak(self, input_signal, factor=0.5):
+        """return is the peak is or not a valey.
+
+        perform's a valey decetion of an input_signal
+
+        Args:
+            input_signal : array [n_samples]
+                A array that represents a signal
+            factor : int
+                the max percentage diferency to considerate a positive peak
+                more important than a negative peak.
+        Returns:
+            (left_error, right_error): tuple(float,float)
+                A tuple that contains the calculated left and right
+                mean squared error
+        Raises:
+            IndexError: An error occurred accessing input_signal.
+        """
         id_max = np.argmax(input_signal)
         id_min = np.argmin(input_signal)
         if (input_signal[id_max] < np.abs(input_signal[id_min]) * factor):
@@ -112,6 +154,7 @@ class DefaultPacket(RegisteredSerializable):
         return False
 
     def args(self):
+        """return a list with all attributes."""
         return [self.input_signal,
                 self.peak_signal,
                 self.label,
@@ -125,11 +168,13 @@ class LabeledPacket(DefaultPacket):
     def __init__(self, input_signal, peak_signal=None, label=None,
                  models=None, errors=None, parameters=None,
                  names=None, is_valey=False, remove_trends=True):
+        """Initialize a packet and call's DefaultPacket"""
         super().__init__(input_signal, peak_signal, models, errors,
                          parameters, names, is_valey, remove_trends)
         self.label = label
 
     def args(self):
+        """return a list with all attributes."""
         return [self.input_signal,
                 self.peak_signal,
                 self.label,
@@ -141,7 +186,21 @@ class LabeledPacket(DefaultPacket):
 
 
 class DefaultSignal(RegisteredSerializable):
+    """Deftaults class for signal's container's.
+
+    This class help's to encapsulate an whole signal (an ECG, for example).
+    Contains methods that return tables with all informations contained on
+    the packets.
+
+    Attributes:
+        input_signal: np.array for a whole signal.
+        indicators: list that's contains all peaks for each packet
+        packets: A lista of the the packets
+    """
     def __init__(self, input_signal, indicators=None, packets=None):
+        """Initiate the signal. To utilized pre existent packets see
+        build_from_packets. Dont pass packets as input, they stay here
+        only for deseriliazable purpose. """
         if len(input_signal) > 1:
             warnings.warn("You are passing more than one signal")
 
@@ -152,9 +211,25 @@ class DefaultSignal(RegisteredSerializable):
         else:
             self.packets = [deserialize(x) for x in packets]
 
-
     def build_packets(self, bandwidth, container,
                       normalized=True, normalizer=MinMaxScaler()):
+        """Return a list of packets.
+
+        Build the packets using the input_signal and indicators.
+
+        Args:
+            bandwidth : A int number that represent the half lenght of
+            segmented signal.
+            container : A class to encapsulate the packet.
+            normalizer : A boolean that indicate if the segmented singal
+            must be normalized or not.
+            normalizer: normalizer object, that will be used to aplly
+            normalization on the segmented signal.
+        Returns:
+            packets: A list of packets
+        Raises:
+            IndexError: An error occurred accessing input_signal.
+        """
         if self.indicators[0] - bandwidth <= 0:
             raise ValueError('The bandwith must be'
                              + 'less than the first indicator')
@@ -167,8 +242,25 @@ class DefaultSignal(RegisteredSerializable):
         return self.packets
 
     def get_errors_table(self, normalized=True, normalizer=MinMaxScaler()):
+        """Return a dataframe with the errors for evalueted models
+
+        Return a dataframe wich each row represent's the errors for each
+        matemathical model for a segmented signal. Optionally  for each
+        piecewise of an model, normalize separatly all erros reference to this
+        part of the model.
+        Args:
+            normalizer : A boolean that indicate if the errors
+            must be normalized or not.
+            normalizer: normalizer object, that will be used to aplly
+            normalization on the errors.
+        Returns:
+            df: dataframe for all errors named by columns
+        Raises:
+            PacketsNotInitiated: An error occurred if the packets are not
+            initilazed before.
+        """
         if not self.packets[0].errors:
-            raise PacktesNotInitiated
+            raise PacketsNotInitiated
         else:
             list_of_arrays = []
             columns = []
@@ -193,8 +285,25 @@ class DefaultSignal(RegisteredSerializable):
             return df
 
     def get_param_table(self, normalized=True, normalizer=MinMaxScaler()):
+        """Return a dataframe with the parans for evalueted models
+
+        Return a dataframe wich each row represent's the parameters for each
+        matemathical model for a segmented signal. Optionally  for each
+        piecewise of an model, normalize separatly all parameters reference to
+        this part of the model.
+        Args:
+            normalizer : A boolean that indicate if the errors
+            must be normalized or not.
+            normalizer: normalizer object, that will be used to aplly
+            normalization on the parameters.
+        Returns:
+            df: dataframe for all parameters named by columns
+        Raises:
+            PacketsNotInitiated: An error occurred if the packets are not
+            initilazed before.
+        """
         if not self.packets[0].errors:
-            raise PacktesNotInitiated
+            raise PacketsNotInitiated
         else:
             list_of_arrays = []
             row = []
@@ -219,6 +328,7 @@ class DefaultSignal(RegisteredSerializable):
             return df
 
     def get_signals(self, normalized=True, normalizer=MinMaxScaler()):
+        """Return a list with all segmented signal"""
         list_of_arrays = []
 
         for packet in self.packets:
@@ -233,6 +343,31 @@ class DefaultSignal(RegisteredSerializable):
     def get_signals_and_models(self, normalized=True,
                                normalizer=MinMaxScaler(),
                                only_best=True):
+        """return a tuple with five list that contais all informations about
+        models and signals.
+
+        For each list on the tuple has cople of elemets like signals, models,
+        or the names of models. Optionally normalize the signals. By the way,
+        Optionally return only the best mathematical model
+        Args:
+            normalizer : A boolean that indicate if the signal
+            must be normalized or not.
+            normalizer: Normalizer object, that will be used to aplly
+            normalization on the signal.
+            only_best: A boolean that indicate to return all models or only
+            the best model
+        Returns:
+            list_of_signals: list of segmented signals
+            list_of_models: list of numpy array picewise evalueted models
+            list_of_names: lisft of names od the models
+            list_of_errors: list of list of errors
+            list_of_types: listy of types of peaks (valey or not)
+        Raises:
+            PacketsNotInitiated: An error occurred if the packets are not
+            initilazed before.
+            TypeError : an error ocorred if the models aren't list of numpy
+            arrays
+        """
         list_of_signals = []
         list_of_models = []
         list_of_names = []
@@ -271,6 +406,17 @@ class DefaultSignal(RegisteredSerializable):
 
     @classmethod
     def build_from_packets(cls, list_of_packets):
+        """contruct a signal using a pre existent lisft of packets
+
+        Concatenate all segmented inputs to build a whole signal
+        Args:
+            list_of_packets : A list contains packets
+        Returns:
+            my_cls: a object of this class
+        Raises:
+
+            ValueError : an error ocorred if the packets have missing values.
+        """
         list_of_peaks = []
         cumul = 0
         for (count, packet) in enumerate(list_of_packets):
@@ -287,6 +433,21 @@ class DefaultSignal(RegisteredSerializable):
 
 
 class ECG(DefaultSignal):
+    """Deftaults class for ECG signal's container's.
+
+    This class help's to encapsulate an whole ECG signal.
+    Contains methods that return tables with all informations contained on
+    the packets.
+
+    Attributes:
+        input_signal: np.array for a whole signal.
+        indicators: list that's contains all peaks for each packet
+        labels: 
+        ts:
+        filtered:
+        heart_rate_ts:
+        packets: A lista of the the packets
+    """
     def __init__(self, input_signal, indicators, labels,
                  ts=None, filtered=None,
                  heart_rate_ts=None, heart_hate=None,
@@ -300,6 +461,7 @@ class ECG(DefaultSignal):
         if indicators is None:
             raise ValueError('You must pass the R peaks.')
 
+        input_signal = np.array(input_signal)
         if is_filtered:
             super().__init__(input_signal, indicators, packets)
             self.filtered = input_signal
@@ -363,7 +525,7 @@ class ECG(DefaultSignal):
                 packets_container]
 
 
-class MathematicalModel():
+class MathematicalModel(object):
     def __init__(self,
                  left_function,
                  rigth_function,
@@ -606,3 +768,11 @@ class RightInverseRayleigh(Rayleigh):
         left_model = self.normalize_amplitude(left_model, rigth_model)
         model = np.concatenate((left_model[::-1], rigth_model[1:]*-1), axis=0)
         return model, np.argmax(model)
+
+
+
+class WaveletDetect():
+    def __init__(self):
+ 
+class RandomFeatures():
+    def __init__(self):

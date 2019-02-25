@@ -461,58 +461,6 @@ def consume_parameters(packet, mat_model, input_values,
 
     return output_values, output_freq, output_right
 
-#
-#def consume_evaluetor(input_signal, model, parameter,
-#                      lenght, peak_signal=None):
-#    final_left_error = np.inf
-#    final_right_error = np.inf
-#
-#    for (left_value, right_value) in parameter:
-#        for (left_length, rigth_length) in lenght:
-#
-#            (left_model, left_error,
-#             right_model, right_error) = model.call(input_signal=input_signal,
-#                                                    left_value=left_value,
-#                                                    left_length=left_length,
-#                                                    right_value=right_value,
-#                                                    rigth_length=rigth_length,
-#                                                    peak_signal=peak_signal)
-#            if final_left_error > left_error:
-#                final_left_model = left_model
-#                final_left_error = left_error
-#                final_left_value = left_value
-#                final_left_length = left_length
-#
-#            if final_right_error > right_error:
-#                final_right_model = right_model
-#                final_right_error = right_error
-#                final_right_value = right_value
-#                final_right_length = rigth_length
-#
-#    results = dict()
-#    results['final_left_model'] = final_left_model
-#    results['final_left_error'] = final_left_error
-#    results['final_left_value'] = final_left_value
-#    results['final_left_length'] = final_left_length
-#    results['final_right_model'] = final_right_model
-#    results['final_right_error'] = final_right_error
-#    results['final_right_value'] = final_right_value
-#    results['final_right_length'] = final_right_length
-#
-#    return results
-
-def get_automatic_parameters(function, packets_of_signals,
-                             list_of_evaluetor,
-                             n_tests=1):
-
-    if n_tests < packets_of_signals:
-        raise ValueError("n_tests parameter mus be smallest"
-                         + "than or equal len(packets_of_signals)")
-    perm = np.random.permutation(len(packets_of_signals))[:n_tests]
-    
-    evalueted_signals = evaluete_models(function, packets_of_signals,
-                                        list_of_evaluetor, list_of_peaks)
-    
     
 def return_range(value, percent=5, n=10):
     return np.linspace(value-value/percent,value+value/percent,n)  
@@ -525,3 +473,14 @@ def direction_peak(input_signal, factor=0.4):
     if (input_signal[id_max] < np.abs(input_signal[id_min]) * factor):
         return 1
     return 0
+
+
+
+def write_file(name, data):
+    with open(name, "w") as text_file:
+        return text_file.write(data)
+
+
+def read_file(name):
+    with open(name, "r") as text_file:
+        return text_file.read()
