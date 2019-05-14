@@ -367,3 +367,57 @@ def matrix_to_tikz(matrix , numbers, Legend):
     return StringFinal
 
 
+if __name__ == '__main__':
+    __spec__ = "ModuleSpec(name='builtins', loader=<class '_frozen_importlib.BuiltinImporter'>)"
+    offset = 25
+    freq = 360
+    noises = [0, 0.1, 0.2, 0.3, 0.4]
+    data, data_label = load_data(offset)
+    data_modeled, data_modeled_label = load_data()
+
+    # create artificial data
+    create_models(data_modeled, generate_morfology, noises, freq)
+    create_models(data_modeled, generate_wavelet, noises, freq)
+    create_models(data_modeled, generate_matemhatical, noises, offset)
+    create_models(data_modeled, generate_random, noises, offset)
+    # create real data
+    create_models(data, generate_morfology, noises, freq, '_real')
+    create_models(data, generate_wavelet, noises, freq, '_real')
+    create_models(data, generate_matemhatical, noises, offset, '_real')
+    create_models(data, generate_random, noises, offset, '_real')
+
+    # evaluete models without noise on train
+    morfo_xp1 = evaluete_morfology(noises,
+                                   data_modeled_label,
+                                   data_label,
+                                   False)
+    wave_xp1 = evaluete_wavelet(noises,
+                                data_modeled_label,
+                                data_label,
+                                False)
+    mathe_xp1 = evaluete_mathematical(noises,
+                                      data_modeled_label,
+                                      data_label,
+                                      False)
+    random_xp1 = evaluete_random(noises,
+                                 data_modeled_label,
+                                 data_label,
+                                 False)
+
+    # evaluete models with noise on train
+    morfo_xp2 = evaluete_morfology(noises,
+                                   data_modeled_label,
+                                   data_label,
+                                   True)
+    wave_xp2 = evaluete_wavelet(noises,
+                                data_modeled_label,
+                                data_label,
+                                True)
+    mathe_xp2 = evaluete_mathematical(noises,
+                                      data_modeled_label,
+                                      data_label,
+                                      True)
+    random_xp2 = evaluete_random(noises,
+                                 data_modeled_label,
+                                 data_label,
+                                 True)
