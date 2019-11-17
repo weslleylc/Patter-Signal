@@ -6,7 +6,8 @@ Created on Sat Jan 26 15:50:18 2019
 """
 import numpy as np
 import multiprocessing as mp
-from bayes_opt import BayesianOptimization
+from matmodel import feature_builder as fb
+#from bayes_opt import BayesianOptimization
 
 
 def consume_process(args):
@@ -58,6 +59,18 @@ def evaluete_models(function, packets_of_signals,
         evalueted_signals.append(result)
     return evalueted_signals
 
+def consume_fit_cls(args):
+    return args[0].fit(args[1], args[2])
+
+def mp_fit_cls(function, estimators, X, y, workers=2):
+
+    with mp.Pool(processes=workers) as pool:
+        result = pool.map(function, [(estimators[index],
+                                     X[index], y.copy())
+                          for index in range(len(estimators))])
+    pool.close()
+    return result
+
 
 def mp_signal_apply(function, packets_of_signals,
                     list_of_evaluetor, workers=2):
@@ -77,7 +90,6 @@ def serial_signal_apply(function, packets_of_signals, list_of_evaluetor):
     return new_packets_of_signals
 
 def consume_packet_helper(args):
-    print(1)
     return consume_packet(args[0], args[1])
 
 
@@ -98,78 +110,78 @@ def consume_packet(packet, list_of_evaluetor):
     packet.names = list_of_names
     return packet
 
-
-def consume_signal2(packet, evaluetor):
-
-    parameters = dict()
-
-    input_signal = packet.input_signal
-    peak_signal = packet.peak_signal
-    mat_model = evaluetor.mat_model
-
-#    for (left_value, right_value) in evaluetor.parameters['values']:
-#        for (left_length, rigth_length) in evaluetor.parameters['lenght']:
-#            for perc_ceif in evaluetor.parameters['cut']:
 #
-#                (model, error) = mat_model.call(input_signal=input_signal,
-#                                                left_value=left_value,
-#                                                left_length=left_length,
-#                                                right_value=right_value,
-#                                                rigth_length=rigth_length,
-#                                                left_ceif=perc_ceif,
-#                                                right_ceif=perc_ceif,
-#                                                peak_signal=peak_signal)
-#                left_model = model[0]
-#                left_error = error[0]
-#                right_model = model[1]
-#                right_error = error[1]
+#def consume_signal2(packet, evaluetor):
 #
-#                if final_left_error > left_error:
-#                    final_left_model = left_model
-#                    final_left_error = left_error
-#                    final_left_value = left_value
-#                    final_left_length = left_length
+#    parameters = dict()
 #
-#                if final_right_error > right_error:
-#                    final_right_model = right_model
-#                    final_right_error = right_error
-#                    final_right_value = right_value
-#                    final_right_length = rigth_length
-    
-
-    pbounds = evaluetor.parameters
-
-    
-    optimizer = BayesianOptimization(
-        f=utility_function(mat_model,input_signal,peak_signal),
-        pbounds=pbounds,
-        verbose=0, # verbose = 1 prints only when a maximum is observed, verbose = 0 is silent
-        random_state=1,
-    )
-    
-    
-    optimizer.maximize(
-        init_points=3,
-        n_iter=3,
-    )
-    
-    params = optimizer.max['params']
-    
-    (best_model, peak_model, errors) = mat_model.call(input_signal=input_signal,
-                                          values=(params['a'],params['b']),
-                                          frequency=(params['c'],params['d']),
-                                          percet_ceif=(params['e'],params['f']),
-                                          peak_signal=peak_signal,
-                                          evalue_model=True)
-   
-
-    best_model = [best_model[:peak_model],best_model[peak_model:]]
-    errors = [errors[0], errors[1]]
-    parameters['values'] = [params['a'], params['c']]
-    parameters['length'] = [params['b'], params['d']]
-
-    return (errors, parameters, best_model)
-
+#    input_signal = packet.input_signal
+#    peak_signal = packet.peak_signal
+#    mat_model = evaluetor.mat_model
+#
+##    for (left_value, right_value) in evaluetor.parameters['values']:
+##        for (left_length, rigth_length) in evaluetor.parameters['lenght']:
+##            for perc_ceif in evaluetor.parameters['cut']:
+##
+##                (model, error) = mat_model.call(input_signal=input_signal,
+##                                                left_value=left_value,
+##                                                left_length=left_length,
+##                                                right_value=right_value,
+##                                                rigth_length=rigth_length,
+##                                                left_ceif=perc_ceif,
+##                                                right_ceif=perc_ceif,
+##                                                peak_signal=peak_signal)
+##                left_model = model[0]
+##                left_error = error[0]
+##                right_model = model[1]
+##                right_error = error[1]
+##
+##                if final_left_error > left_error:
+##                    final_left_model = left_model
+##                    final_left_error = left_error
+##                    final_left_value = left_value
+##                    final_left_length = left_length
+##
+##                if final_right_error > right_error:
+##                    final_right_model = right_model
+##                    final_right_error = right_error
+##                    final_right_value = right_value
+##                    final_right_length = rigth_length
+#    
+#
+#    pbounds = evaluetor.parameters
+#
+#    
+#    optimizer = BayesianOptimization(
+#        f=utility_function(mat_model,input_signal,peak_signal),
+#        pbounds=pbounds,
+#        verbose=0, # verbose = 1 prints only when a maximum is observed, verbose = 0 is silent
+#        random_state=1,
+#    )
+#    
+#    
+#    optimizer.maximize(
+#        init_points=3,
+#        n_iter=3,
+#    )
+#    
+#    params = optimizer.max['params']
+#    
+#    (best_model, peak_model, errors) = mat_model.call(input_signal=input_signal,
+#                                          values=(params['a'],params['b']),
+#                                          frequency=(params['c'],params['d']),
+#                                          percet_ceif=(params['e'],params['f']),
+#                                          peak_signal=peak_signal,
+#                                          evalue_model=True)
+#   
+#
+#    best_model = [best_model[:peak_model],best_model[peak_model:]]
+#    errors = [errors[0], errors[1]]
+#    parameters['values'] = [params['a'], params['c']]
+#    parameters['length'] = [params['b'], params['d']]
+#
+#    return (errors, parameters, best_model)
+#
 
 
 def consume_signal(packet, evaluetor):
@@ -484,3 +496,39 @@ def write_file(name, data):
 def read_file(name):
     with open(name, "r") as text_file:
         return text_file.read()
+
+
+
+def get_default_templates(len_packet):
+    parameter = dict()
+    parameter['values'] = list(zip(np.linspace(1, 15, 25),
+                               np.linspace(1, 15, 25)))
+    parameter['lenght'] = list(zip(np.linspace(len_packet*0.5, len_packet*2, 5),
+                               np.linspace(len_packet*0.5, len_packet*2, 5)))
+    parameter['cut'] = list(zip(np.linspace(0, 60, 7),
+                            np.linspace(0, 60, 7)))
+
+
+    l = []
+    for i in np.linspace(1, 15, 25):
+        for j in np.linspace(1, 15, 25):
+            l.append((i, j))
+
+    r_parameter = dict()
+    r_parameter['values'] = l
+    r_parameter['lenght'] = list(zip(np.linspace(len_packet*0.5, len_packet*2, 5),
+                               np.linspace(len_packet*0.5, len_packet*2, 5)))
+    r_parameter['cut'] = list(zip(np.linspace(0, 60, 7),
+                                   np.linspace(0, 60, 7)))
+
+    template_gaussian = fb.Gaussian(parameter)
+    template_mexican = fb.MexicanHat(parameter)
+    template_rayleigh = fb.Rayleigh(r_parameter)
+    template_left_rayleigh = fb.LeftInverseRayleigh(parameter)
+    template_right_rayleigh = fb.RightInverseRayleigh(parameter)
+    
+    list_of_templates = [template_gaussian, template_mexican,
+                     template_rayleigh, template_left_rayleigh,
+                     template_right_rayleigh]
+
+    return list_of_templates

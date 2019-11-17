@@ -181,7 +181,6 @@ def generate_random(offset, random_matrix=None):
     return my_generate_random
 
 
-
 def restore_model(name):
     return fb.deserialize(utils.read_file(name))
 
@@ -374,7 +373,7 @@ def aux_load_mathematical(name):
 
 def load_mathematical(s_type, noise=0):
     if s_type == 'real_test':
-        return aux_load_mathematical('m_model_' + str(0) + '_real')
+        return aux_load_mathematical('m_model_' + str(0) + '_real3')
     elif s_type == 'real_train':
         return aux_load_mathematical('m_model_' + str(0) + '_real2')
     else:
@@ -383,7 +382,7 @@ def load_mathematical(s_type, noise=0):
 
 def load_random(s_type, noise=0):
     if s_type == 'real_test':
-        return restore_model('random_model_' + str(0) + '_real').get_table_erros().values
+        return restore_model('random_model_' + str(0) + '_real3').get_table_erros().values
     elif s_type == 'real_train':
         return restore_model('random_model_' + str(0) + '_real2').get_table_erros().values
     else:
@@ -392,7 +391,7 @@ def load_random(s_type, noise=0):
 
 def load_wavelet(s_type, noise=0):
     if s_type == 'real_test':
-        return restore_model('wavelet_model_' + str(0) + '_real').get_table_erros().values[:, 4:10]
+        return restore_model('wavelet_model_' + str(0) + '_real3').get_table_erros().values[:, 4:10]
     elif s_type == 'real_train':
         return restore_model('wavelet_model_' + str(0) + '_real2').get_table_erros().values[:, 4:10]
     else:
@@ -401,7 +400,7 @@ def load_wavelet(s_type, noise=0):
 
 def load_morfology(s_type, noise=0):
     if s_type == 'real_test':
-        return restore_model('morfology_model_' + str(0) + '_real').get_table_erros().values
+        return restore_model('morfology_model_' + str(0) + '_real3').get_table_erros().values
     elif s_type == 'real_train':
         return restore_model('morfology_model_' + str(0) + '_real2').get_table_erros().values
     else:
@@ -500,120 +499,41 @@ if __name__ == '__main__':
     mix_data, mix_label_data = load_mix(data, data_label, new_data, new_data_label)
 
 
-#    plt.plot(data_modeled[0].input_signal)
-#    plt.plot(data[20].input_signal)
-#    plt.show()
-#    plt.close()
-#
-#    plt.plot(data_modeled[755].input_signal)
-#    plt.plot(data[9].input_signal)
-#    plt.show()
-#    plt.close()
-#
-#    plt.plot(data_modeled[501].input_signal)
-#    plt.plot(data[10].input_signal)
-#    plt.show()
-#    plt.close()
-#
-#    plt.plot(data_modeled[250].input_signal)
-#    plt.plot(data[2].input_signal)
-#    plt.show()
-#    plt.close()
-
-    # func_random = generate_random(offset)
     random_model = restore_model('random_model_' + str(0) + '_real')
     func_random = generate_random(offset, random_model.random_matrix)
     func_eval_random = evaluete_model_ensemble(number_cls)
 
-#    # create artificial data
-#    create_models(data_modeled, generate_morfology, offset, noises)
-#    create_models(data_modeled, generate_wavelet, freq, noises)
-#    create_models(data_modeled, generate_mathematical, offset, noises)
-#    create_models(data_modeled, func_random, offset, noises)
-#    # create real data
-#    create_models(data, generate_morfology, offset, [0], '_real')
-#    create_models(data, generate_wavelet, freq, [0], '_real')
-#    create_models(data, generate_mathematical, offset, [0], '_real')
-#    create_models(data, func_random, offset, [0], '_real')
-#    # create new real data
+    # create mix data
 
-    create_models(new_data, generate_morfology, offset, [0], '_real2')
-    create_models(new_data, generate_wavelet, freq, [0], '_real2')
-    create_models(new_data, generate_mathematical, offset, [0], '_real2')
-    create_models(new_data, func_random, offset, [0], '_real2')
-
-#    # create mix data
-
-    create_models(mix_data, generate_morfology, offset, [0], '_real3')
-    create_models(mix_data, generate_wavelet, freq, [0], '_real3')
-    create_models(mix_data, generate_mathematical, offset, [0], '_real3')
-    create_models(mix_data, func_random, offset, [0], '_real3')
+    # create_models(mix_data, generate_morfology, offset, [0], '_real3')
+    # create_models(mix_data, generate_wavelet, freq, [0], '_real3')
+    # create_models(mix_data, generate_mathematical, offset, [0], '_real3')
+    # create_models(mix_data, func_random, offset, [0], '_real3')
     
-
-    # wave_xp1 = evaluete_wavelet_sanity(data_modeled_label)
-    # morfo_xp1 = evaluete_evaluete_morfology_sanity(data_modeled_label)
-    # random_xp1 = evaluete_evaluete_random_sanity(data_modeled_label)
-    # mathe_xp1 = evaluete_evaluete_mathematical_sanity(data_modeled_label)
-
-    # print("Wavelets")
-    # print_status(wave_xp1)
-    # print("Morfologie")
-    # print_status(morfo_xp1)
-    # print("Random")
-    # print_status(random_xp1)
-    # print("Matemathical")
-    # print_status(mathe_xp1)
-
-
-    # morfo_xp2 = evaluate_methodology(load_morfology, evaluete_model,
-    #                                  noises, data_modeled_label,
-    #                                  new_data_label, data_label, False)
-
-    # wave_xp2 = evaluate_methodology(load_wavelet, evaluete_model,
-    #                                  noises, data_modeled_label,
-    #                                  new_data_label, data_label, False)
-
-    # mathe_xp2 = evaluate_methodology(load_mathematical, evaluete_model,
-    #                                  noises, data_modeled_label,
-    #                                  new_data_label, data_label, False)
-
-    # random_xp2 = evaluate_methodology(load_random, func_eval_random,
-    #                                   noises, data_modeled_label,
-    #                                   new_data_label, data_label, False)
-
-
-    # print("Morfologie")
-    # for x in  morfo_xp2: print_status(x) 
-    # print("Wavelets")
-    # for x in  wave_xp2: print_status(x) 
-    # print("Random")
-    # for x in  random_xp2: print_status(x) 
-    # print("Matemathical")
-    # for x in  mathe_xp2: print_status(x) 
 
 
     # morfo_xp3 = evaluate_methodology(load_morfology, evaluete_model,
-    #                                  noises, data_modeled_label,
-    #                                  new_data_label, data_label, True)
+    #                                   noises, data_modeled_label,
+    #                                   new_data_label, mix_label_data, False)
 
     # wave_xp3 = evaluate_methodology(load_wavelet, evaluete_model,
-    #                                  noises, data_modeled_label,
-    #                                  new_data_label, data_label, True)
+    #                                   noises, data_modeled_label,
+    #                                   new_data_label, mix_label_data, False)
 
     # mathe_xp3 = evaluate_methodology(load_mathematical, evaluete_model,
-    #                                  noises, data_modeled_label,
-    #                                  new_data_label, data_label, True)
-
-    # random_xp3 = evaluate_methodology(load_random, func_eval_random,
     #                                   noises, data_modeled_label,
-    #                                   new_data_label, data_label, True)
+    #                                   new_data_label, mix_label_data, False)
+
+    random_xp3 = evaluate_methodology(load_random, func_eval_random,
+                                      noises, data_modeled_label,
+                                      new_data_label, mix_label_data, False)
 
     # print("Morfologie")
     # for x in  morfo_xp3: print_status(x) 
     # print("Wavelets")
     # for x in  wave_xp3: print_status(x) 
-    # print("Random")
-    # for x in  random_xp3: print_status(x) 
+    print("Random")
+    for x in  random_xp3: print_status(x) 
     # print("Matemathical")
     # for x in  mathe_xp3: print_status(x) 
 

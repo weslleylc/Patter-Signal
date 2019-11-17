@@ -109,6 +109,10 @@ venv.bak/
 
 # mkdocs documentation
 /site
+/models
+/old
+/HARDataset
+/data
 
 # mypy
 .mypy_cache/

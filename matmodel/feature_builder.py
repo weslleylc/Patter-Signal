@@ -10,6 +10,10 @@ import pandas as pd
 from scipy import signal as sci_signal
 import warnings
 from sklearn.preprocessing import MinMaxScaler
+# from pywt import wavedec
+from scipy import signal
+import peakutils
+from matmodel import WTdelineator as wav
 import json
 
 registry = {}
@@ -68,11 +72,11 @@ class BetterSerializable(object):
         """Just call's dumps from json with name and data class."""
         return json.dumps({
                 'class': self.__class__.__name__,
-                'args': self.args(),
+                'args': self.input_args(),
                 },
                 cls=NumpyEncoder)
 
-    def args(self):
+    def input_args(self):
         raise NotImplementedError("You must to implement args.")
 
 
@@ -153,15 +157,15 @@ class DefaultPacket(RegisteredSerializable):
             return True
         return False
 
-    def args(self):
+    def input_args(self):
         """return a list with all attributes."""
         return [self.input_signal,
                 self.peak_signal,
-                self.label,
                 self.models,
                 self.errors,
                 self.parameters,
-                self.names]
+                self.names,
+                self.is_valey]
 
 
 class LabeledPacket(DefaultPacket):
@@ -173,7 +177,7 @@ class LabeledPacket(DefaultPacket):
                          parameters, names, is_valey, remove_trends)
         self.label = label
 
-    def args(self):
+    def input_args(self):
         """return a list with all attributes."""
         return [self.input_signal,
                 self.peak_signal,
@@ -277,6 +281,8 @@ class DefaultSignal(RegisteredSerializable):
 
             if normalized:
                 for i in range(len(df)):
+                    # normalize only between each part of the model, for each
+                    # distribution
                     for j in df.columns.levels[1].values:
                         df.iloc[i].loc[:, j] = normalizer.fit_transform(
                             df.iloc[i].loc[:, j].values.reshape(-1, 1)
@@ -442,7 +448,7 @@ class ECG(DefaultSignal):
     Attributes:
         input_signal: np.array for a whole signal.
         indicators: list that's contains all peaks for each packet
-        labels: 
+        labels:
         ts:
         filtered:
         heart_rate_ts:
@@ -507,7 +513,7 @@ class ECG(DefaultSignal):
         my_cls.packets = list_of_packets
         return my_cls
 
-    def args(self):
+    def input_args(self):
         if self.packets:
             packets_container = [x.serialize() for x in self.packets]
         else:
@@ -752,7 +758,7 @@ class LeftInverseRayleigh(Rayleigh):
         rigth_model = self.rigth_function(rigth_length, right_value)
         left_model = self.normalize_amplitude(left_model, rigth_model)
         model = np.concatenate((left_model[::-1]*-1, rigth_model[1:]), axis=0)
-        return model, np.argmax(model)
+        return model, int(left_length)
 
 
 class RightInverseRayleigh(Rayleigh):
@@ -770,9 +776,131 @@ class RightInverseRayleigh(Rayleigh):
         return model, np.argmax(model)
 
 
+class RandomExtraction(RegisteredSerializable):
+    def __init__(self, n_classifiers=15, offset=50, n_features=50,
+                 results=None, random_matrix=None):
+        self.n_classifiers = n_classifiers
+        self.n_features = n_features
+        self.offset = offset
+        if not results:
+            self.results = []
+        else:
+            self.results = np.array(results)
+        if not random_matrix:
+            self.random_matrix = np.random.randn(2 * self.offset *
+                                                 self.n_classifiers,
+                                                 self.n_features)
+        else:
+            self.random_matrix = np.array(random_matrix)
 
-class WaveletDetect():
-    def __init__(self):
- 
-class RandomFeatures():
-    def __init__(self):
+    def evaluete_signal(self, input_signal):
+
+        if len(input_signal) != 2 * self.offset:
+            input_signal = signal.resample(input_signal, 2 * self.offset)
+        results = []
+        for i in range(self.n_classifiers):
+            x = np.matmul(input_signal, self.random_matrix[(0 + (2 *
+                          self.offset * (i))):(2 * self.offset * (1 + i)), :])
+            results = np.concatenate((results, x))
+
+        self.results.append(results)
+
+    def get_table_erros(self):
+        return pd.DataFrame(data=self.results)
+
+    def input_args(self):
+        return [self.n_classifiers,
+                self.offset,
+                self.n_features,
+                self.results,
+                self.random_matrix]
+
+
+class MorfologyDetector(RegisteredSerializable):
+    def __init__(self, offset=90, results=None):
+        self.offset = offset
+        if not results:
+            self.results = []
+        else:
+            self.results = np.array(results)
+
+    def evaluete_signal(self, input_signal, peak_signal):
+
+        if len(input_signal) != 2 * self.offset:
+            input_signal = signal.resample(input_signal, 2 * self.offset)
+        results = []
+        results.append(np.min(input_signal[:40]))
+        results.append(np.max(input_signal[75:95]))
+        results.append(np.max(input_signal[95:150]))
+        results.append(np.min(input_signal[150:]))
+        results = [np.abs(input_signal[peak_signal] - x) for x in results]
+        self.results.append(results)
+        return results
+
+    def get_table_erros(self):
+        return pd.DataFrame(data=self.results)
+
+    def input_args(self):
+        return [self.offset,
+                self.results]
+
+
+class WaveletExtraction(RegisteredSerializable):
+    def __init__(self, epi_qrs=[0.5, 0.5, 0.5, 0.5, 0.5],
+                 epi_p=0.02, epi_q=0.25, results=None):
+        self.epi_qrs = epi_qrs
+        self.epi_p = epi_p
+        self.epi_q = epi_q
+        if not results:
+            self.results = []
+        else:
+            self.results = results
+
+    def evaluete_signal(self, input_signal, fs=250):
+        # Number of samples in the signal
+        N = input_signal.shape[0]
+        # Create the filters to apply the algorithme-a-trous
+        Q = wav.waveletFilters(N, fs)
+        # Perform signal decomposition
+        w = wav.waveletDecomp(self.smooth(input_signal, 3), Q)
+        results = []
+        for i, cd in enumerate(w):
+            [positive, negative] = self.count_peaks(cd,
+                                                    rms(cd) * self.epi_qrs[i])
+            results = np.concatenate((results, [positive, negative]))
+        self.results.append(results)
+
+    def get_table_erros(self):
+        return pd.DataFrame(data=self.results, columns=['w1p', 'w1n',
+                                                        'w2p', 'w2n',
+                                                        'w3p', 'w3n',
+                                                        'w4p', 'w4n',
+                                                        'w5p', 'w5n'])
+
+    def count_peaks(self, input_signal, amp):
+        if len(input_signal) >= 3:
+            idx_max = peakutils.indexes(input_signal, thres=amp)
+            max_pks = input_signal[idx_max]
+            idx_min = peakutils.indexes(-1*input_signal, thres=amp)
+            min_pks = input_signal[idx_min]
+            positive = len(max_pks)
+            negative = len(min_pks)
+        else:
+            positive = 0
+            negative = 0
+        return positive, negative
+
+    def input_args(self):
+        return [self.epi_qrs,
+                self.epi_p,
+                self.epi_q,
+                self.results]
+
+    def smooth(self, y, box_pts):
+        box = np.ones(box_pts)/box_pts
+        y_smooth = np.convolve(y, box, mode='same')
+        return y_smooth
+
+
+def rms(x):
+    return np.sqrt(np.mean(x**2))
