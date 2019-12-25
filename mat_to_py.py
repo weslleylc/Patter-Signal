@@ -36,13 +36,23 @@ for name in ListName:
                                                          show=False)
         if name == 'QS_5':
             filtered = np.multiply(filtered,-1)
+            ecg_signal = np.multiply(ecg_signal,-1)
+
         if name == 'qRs_4':
-            filtered = np.multiply(filtered,1.4)
+            if np.random.randint(2):
+            #     ecg_signal = np.multiply(filtered, 1.5)
+                m = np.max(ecg_signal)
+                d = 2.2/m
+                factor = np.random.randint(1, 2+int(np.floor(d)))
+                print(factor)
+                ecg_signal = np.multiply(ecg_signal, factor)
+            else:
+                print('normal')
         intervals = rpeaks[1:] - rpeaks[:-1]
         intervals = np.mean(intervals)
         heart_rate = np.mean(heart_rate)
         labels = [name for x in rpeaks]
-        my_ecg = fb.ECG(input_signal=filtered, indicators=rpeaks,
+        my_ecg = fb.ECG(input_signal=ecg_signal, indicators=rpeaks,
                         labels=labels, is_filtered=False)
         if name == 'qRs_4':
             offset = int(intervals/7)

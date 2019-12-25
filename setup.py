@@ -14,11 +14,11 @@ with open('LICENSE') as f:
 setup(
     name='sample',
     version='0.1.0',
-    description='Sample package for Python-Guide.org',
+    description='Patter Signal',
     long_description=readme,
-    author='Kenneth Reitz',
-    author_email='me@kennethreitz.com',
-    url='https://github.com/kennethreitz/samplemod',
+    author='Weslley Caldas',
+    author_email='weslleylc@gmail.com',
+    url='https://github.com/weslleylc/Patter-Signal',
     license=license,
     packages=find_packages(exclude=('tests', 'docs'))
 )

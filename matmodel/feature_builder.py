@@ -10,10 +10,12 @@ import pandas as pd
 from scipy import signal as sci_signal
 import warnings
 from sklearn.preprocessing import MinMaxScaler
-# from pywt import wavedec
 from scipy import signal
 import peakutils
+import scipy.stats
 from matmodel import WTdelineator as wav
+from pywt import Wavelet, wavedec
+import operator
 import json
 
 registry = {}
@@ -793,7 +795,7 @@ class RandomExtraction(RegisteredSerializable):
         else:
             self.random_matrix = np.array(random_matrix)
 
-    def evaluete_signal(self, input_signal):
+    def evaluete_signal(self, input_signal, label=''):
 
         if len(input_signal) != 2 * self.offset:
             input_signal = signal.resample(input_signal, 2 * self.offset)
@@ -803,7 +805,7 @@ class RandomExtraction(RegisteredSerializable):
                           self.offset * (i))):(2 * self.offset * (1 + i)), :])
             results = np.concatenate((results, x))
 
-        self.results.append(results)
+        self.results.append(np.concatenate((results, [label])))
 
     def get_table_erros(self):
         return pd.DataFrame(data=self.results)
@@ -817,32 +819,273 @@ class RandomExtraction(RegisteredSerializable):
 
 
 class MorfologyDetector(RegisteredSerializable):
-    def __init__(self, offset=90, results=None):
-        self.offset = offset
+    def __init__(self, a=[0, 40],b=[75, 85],c=[95,105] ,d=[150,180],results=None):
+        self.a = a
+        self.b = b
+        self.c = c
+        self.d = d
         if not results:
             self.results = []
         else:
             self.results = np.array(results)
 
-    def evaluete_signal(self, input_signal, peak_signal):
-
-        if len(input_signal) != 2 * self.offset:
-            input_signal = signal.resample(input_signal, 2 * self.offset)
+    # Function adapted from https://github.com/mondejar/ecg-classification
+    def evaluete_signal(self, input_signal, peak_signal, is_valey=False, label=''):
+        if len(input_signal) != 180:
+            input_signal = signal.resample(input_signal, 180)
         results = []
-        results.append(np.min(input_signal[:40]))
-        results.append(np.max(input_signal[75:95]))
-        results.append(np.max(input_signal[95:150]))
-        results.append(np.min(input_signal[150:]))
-        results = [np.abs(input_signal[peak_signal] - x) for x in results]
-        self.results.append(results)
-        return results
+        R_pos = peak_signal
+
+        R_value = input_signal[R_pos]
+        my_morph = np.zeros((4))
+        y_values = np.zeros(4)
+        x_values = np.zeros(4)
+        # Obtain (max/min) values and index from the intervals
+        [x_values[0], y_values[0]] = max(enumerate(input_signal[self.a[0]:self.a[1]]), key=operator.itemgetter(1))
+        [x_values[1], y_values[1]] = min(enumerate(input_signal[self.b[0]:self.b[1]]), key=operator.itemgetter(1))
+        [x_values[2], y_values[2]] = min(enumerate(input_signal[self.c[0]:self.c[1]]), key=operator.itemgetter(1))
+        [x_values[3], y_values[3]] = max(enumerate(input_signal[self.d[0]:self.d[1]]), key=operator.itemgetter(1))
+
+        x_values[1] = x_values[1] + self.a[0]
+        x_values[2] = x_values[2] + self.b[0]
+        x_values[3] = x_values[3] + self.d[0]
+
+        # Norm data before compute distance
+        x_max = max(x_values)
+        y_max = max(np.append(y_values, R_value))
+        x_min = min(x_values)
+        y_min = min(np.append(y_values, R_value))
+
+        R_pos = (R_pos - x_min) / (x_max - x_min)
+        R_value = (R_value - y_min) / (y_max - y_min)
+
+        for n in range(0, 4):
+            x_values[n] = (x_values[n] - x_min) / (x_max - x_min)
+            y_values[n] = (y_values[n] - y_min) / (y_max - y_min)
+            x_diff = (R_pos - x_values[n])
+            y_diff = R_value - y_values[n]
+            my_morph[n] = np.linalg.norm([x_diff, y_diff])
+        self.results.append(np.concatenate((my_morph, [label])))
+        return my_morph
 
     def get_table_erros(self):
-        return pd.DataFrame(data=self.results)
+        columns = ["md{}".format(i) for i in range(4)]
+        columns.extend(['label'])
+        return pd.DataFrame(data=self.results, columns=columns)
 
     def input_args(self):
-        return [self.offset,
+        return [self.a, self.b, self.c, self.d, self.results]
+
+
+class HOSExtraction(RegisteredSerializable):
+    def __init__(self, n_intervals=6, results=None):
+        self.n_intervals = n_intervals
+        if not results:
+            self.results = []
+        else:
+            self.results = results
+
+    # Compute the HOS descriptor for a heartbeat
+    # Skewness (3 cumulant) and kurtosis (4 cumulant)
+    # Function adapted from https://github.com/mondejar/ecg-classification
+    def evaluete_signal(self, input_signal, label=''):
+        lag = int(round(len(input_signal) / self.n_intervals))
+        hos_b = np.zeros(((self.n_intervals - 1) * 2))
+        for i in range(0, self.n_intervals - 1):
+            pose = (lag * (i + 1))
+            interval = input_signal[int(pose - (lag / 2)):int(pose + (lag / 2))]
+
+            # Skewness
+            hos_b[i] = scipy.stats.skew(interval, 0, True)
+
+            if np.isnan(hos_b[i]):
+                hos_b[i] = 0.0
+
+            # Kurtosis
+            hos_b[(self.n_intervals - 1) + i] = scipy.stats.kurtosis(interval, 0, False, True)
+            if np.isnan(hos_b[(self.n_intervals - 1) + i]):
+                hos_b[(self.n_intervals - 1) + i] = 0.0
+        self.results.append(np.concatenate((hos_b, [label])))
+        return hos_b
+
+    def get_table_erros(self):
+        skewness = ["s{}".format(i) for i in range(self.n_intervals -1)]
+        kurtosis = ["k{}".format(i) for i in range(self.n_intervals -1)]
+        kurtosis.extend(['label'])
+        return pd.DataFrame(data=self.results, columns=skewness.extend(kurtosis))
+
+    def input_args(self):
+        return [self.n_intervals,
                 self.results]
+
+class HermiteExtraction(RegisteredSerializable):
+    def __init__(self, results=None):
+        if not results:
+            self.results = []
+        else:
+            self.results = results
+
+    # https://docs.scipy.org/doc/numpy-1.13.0/reference/routines.polynomials.hermite.html
+    # Support Vector Machine-Based Expert System for Reliable Heartbeat Recognition
+    # 15 hermite coefficients!
+    def evaluete_signal(self, input_signal, label=''):
+        coeffs_hbf = np.zeros(15, dtype=float)
+        coeffs_HBF_3 = np.polynomial.hermite.hermfit(range(0, len(input_signal)), input_signal, 3)  # 3, 4, 5, 6?
+        coeffs_HBF_4 = np.polynomial.hermite.hermfit(range(0, len(input_signal)), input_signal, 4)
+        coeffs_HBF_5 = np.polynomial.hermite.hermfit(range(0, len(input_signal)), input_signal, 5)
+
+        coeffs_hbf = np.concatenate((coeffs_HBF_3, coeffs_HBF_4, coeffs_HBF_5))
+        self.results.append(np.concatenate((coeffs_hbf, [label])))
+        return coeffs_hbf
+
+    def get_table_erros(self):
+        hermite_3 = ["hbf_3{}".format(i) for i in range(5)]
+        hermite_4 = ["hbf_4{}".format(i) for i in range(5)]
+        hermite_5 = ["hbf_5{}".format(i) for i in range(5)]
+        columns = []
+        columns.extend(hermite_3)
+        columns.extend(hermite_4)
+        columns.extend(hermite_5)
+        columns.extend(['label'])
+
+        return pd.DataFrame(data=self.results,
+                            columns=columns)
+
+    def input_args(self):
+        return [self.results]
+
+
+class ULBP1DExtraction(RegisteredSerializable):
+    def __init__(self, results=None):
+        self.uniform_pattern_list = np.array(
+            [0, 1, 2, 3, 4, 6, 7, 8, 12, 14, 15, 16, 24, 28, 30, 31, 32, 48, 56, 60, 62, 63, 64, 96, 112, 120, 124, 126,
+             127, 128,
+             129, 131, 135, 143, 159, 191, 192, 193, 195, 199, 207, 223, 224, 225, 227, 231, 239, 240, 241, 243, 247,
+             248,
+             249, 251, 252, 253, 254, 255])
+        if not results:
+            self.results = []
+        else:
+            self.results = results
+
+    ## Function adapted from https://github.com/mondejar/ecg-classification
+
+    # Compute the uniform LBP 1D from input_signal with neigh equal to number of neighbours
+    # and return the 59 histogram:
+    # 0-57: uniform patterns
+    # 58: the non uniform pattern
+    # NOTE: this method only works with neigh = 8
+    def compute_Uniform_LBP(self, input_signal, neigh=8):
+        hist_u_lbp = np.zeros(59, dtype=float)
+        aux = int(neigh / 2)
+
+        for i in range(aux, len(input_signal) - aux):
+            pattern = np.zeros(neigh)
+            ind = 0
+            for n in list(range(-aux, 0)) + list(range(1, aux + 1)):
+                if input_signal[i] > input_signal[i + n]:
+                    pattern[ind] = 1
+                ind += 1
+            # Convert pattern to id-int 0-255 (for neigh == 8)
+            pattern_id = int("".join(str(c) for c in pattern.astype(int)), 2)
+
+            # Convert id to uniform LBP id 0-57 (uniform LBP)  58: (non uniform LBP)
+            if pattern_id in self.uniform_pattern_list:
+                pattern_uniform_id = int(np.argwhere(self.uniform_pattern_list == pattern_id))
+            else:
+                pattern_uniform_id = 58  # Non uniforms patternsuse
+
+            hist_u_lbp[pattern_uniform_id] += 1.0
+
+        return hist_u_lbp
+
+    def evaluete_signal(self, input_signal, label=''):
+        hist_u_lbp = self.compute_Uniform_LBP(input_signal)
+        self.results.append(np.concatenate((hist_u_lbp, [label])))
+
+    def get_table_erros(self):
+        results = np.array(self.results)
+        size = results.shape[1] -1
+        hist = ["h{}".format(i) for i in range(size)]
+        hist.extend(['label'])
+        return pd.DataFrame(data=self.results, columns=hist)
+
+    def input_args(self):
+        return [self.results]
+
+
+class LBP1DExtraction(RegisteredSerializable):
+    def __init__(self, results=None):
+        self.uniform_pattern_list = np.array(
+            [0, 1, 2, 3, 4, 6, 7, 8, 12, 14, 15, 16, 24, 28, 30, 31, 32, 48, 56, 60, 62, 63, 64, 96, 112, 120, 124, 126,
+             127, 128,
+             129, 131, 135, 143, 159, 191, 192, 193, 195, 199, 207, 223, 224, 225, 227, 231, 239, 240, 241, 243, 247,
+             248,
+             249, 251, 252, 253, 254, 255])
+        if not results:
+            self.results = []
+        else:
+            self.results = results
+
+    ## Function adapted from https://github.com/mondejar/ecg-classification
+
+    def compute_LBP(self, input_signal, neigh=4):
+        hist_u_lbp = np.zeros(np.power(2, neigh), dtype=float)
+
+        aux = int(neigh / 2)
+        for i in range(aux, len(input_signal) - aux):
+            pattern = np.zeros(neigh)
+            ind = 0
+            for n in list(range(-aux, 0)) + list(range(1, aux + 1)):
+                if input_signal[i] > input_signal[i + n]:
+                    pattern[ind] = 1
+                ind += 1
+            # Convert pattern to id-int 0-255 (for neigh == 8)
+            pattern_id = int("".join(str(c) for c in pattern.astype(int)), 2)
+
+            hist_u_lbp[pattern_id] += 1.0
+
+        return hist_u_lbp
+
+    def evaluete_signal(self, input_signal, label=''):
+        hist_u_lbp = self.compute_LBP(input_signal)
+        self.results.append(np.concatenate((hist_u_lbp, [label])))
+
+    def get_table_erros(self):
+        results = np.array(self.results)
+        size = results.shape[1] -1
+        hist = ["h{}".format(i) for i in range(size)]
+        hist.extend(['label'])
+        return pd.DataFrame(data=self.results, columns=hist)
+
+    def input_args(self):
+        return [self.results]
+
+
+class WaveletTransform(RegisteredSerializable):
+    def __init__(self, results=None):
+
+        if not results:
+            self.results = []
+        else:
+            self.results = results
+
+    # Function adapted from https://github.com/mondejar/ecg-classification
+    def evaluete_signal(self, input_signal, label=''):
+        db1 = Wavelet('db1')
+        coeffs = wavedec(input_signal, db1, level=3)
+        wavel = coeffs[0]
+        self.results.append(np.concatenate((wavel, [label])))
+
+    def get_table_erros(self):
+        results = np.array(self.results)
+        size = results.shape[1] -1
+        columns = ["w{}".format(i) for i in range(size)]
+        columns.extend(['label'])
+        return pd.DataFrame(data=results, columns=columns)
+
+    def input_args(self):
+        return [self.results]
 
 
 class WaveletExtraction(RegisteredSerializable):
@@ -856,26 +1099,30 @@ class WaveletExtraction(RegisteredSerializable):
         else:
             self.results = results
 
-    def evaluete_signal(self, input_signal, fs=250):
+    def evaluete_signal(self, input_signal, fs=360, filtered=False, label=''):
         # Number of samples in the signal
         N = input_signal.shape[0]
         # Create the filters to apply the algorithme-a-trous
         Q = wav.waveletFilters(N, fs)
         # Perform signal decomposition
-        w = wav.waveletDecomp(self.smooth(input_signal, 3), Q)
+        if filtered:
+            w = wav.waveletDecomp(self.smooth(input_signal, 3), Q)
+        else:
+            w = wav.waveletDecomp(input_signal, Q)
         results = []
         for i, cd in enumerate(w):
             [positive, negative] = self.count_peaks(cd,
                                                     rms(cd) * self.epi_qrs[i])
             results = np.concatenate((results, [positive, negative]))
-        self.results.append(results)
+        self.results.append(np.concatenate((results, [label])))
 
     def get_table_erros(self):
         return pd.DataFrame(data=self.results, columns=['w1p', 'w1n',
                                                         'w2p', 'w2n',
                                                         'w3p', 'w3n',
                                                         'w4p', 'w4n',
-                                                        'w5p', 'w5n'])
+                                                        'w5p', 'w5n',
+                                                        'label'])
 
     def count_peaks(self, input_signal, amp):
         if len(input_signal) >= 3:

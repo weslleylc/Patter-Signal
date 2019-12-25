@@ -90,6 +90,7 @@ def serial_signal_apply(function, packets_of_signals, list_of_evaluetor):
     return new_packets_of_signals
 
 def consume_packet_helper(args):
+    print('executando')
     return consume_packet(args[0], args[1])
 
 
@@ -501,17 +502,17 @@ def read_file(name):
 
 def get_default_templates(len_packet):
     parameter = dict()
-    parameter['values'] = list(zip(np.linspace(1, 15, 25),
-                               np.linspace(1, 15, 25)))
-    parameter['lenght'] = list(zip(np.linspace(len_packet*0.5, len_packet*2, 5),
-                               np.linspace(len_packet*0.5, len_packet*2, 5)))
+    parameter['values'] = list(zip(np.linspace(1, 15, 30),
+                               np.linspace(1, 15, 30)))
+    parameter['lenght'] = list(zip(np.linspace(len_packet*0.5, len_packet*2.5, 20),
+                               np.linspace(len_packet*0.5, len_packet*2.5, 20)))
     parameter['cut'] = list(zip(np.linspace(0, 60, 7),
                             np.linspace(0, 60, 7)))
 
 
     l = []
-    for i in np.linspace(1, 15, 25):
-        for j in np.linspace(1, 15, 25):
+    for i in np.linspace(1, 15, 30):
+        for j in np.linspace(1, 15, 30):
             l.append((i, j))
 
     r_parameter = dict()
