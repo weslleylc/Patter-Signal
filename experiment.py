@@ -15,8 +15,9 @@ from sklearn.metrics import accuracy_score
 from sklearn.svm import SVC
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
-from sklearn.model_selection import StratifiedShuffleSplit, GroupKFold, ShuffleSplit
+from sklearn.model_selection import StratifiedShuffleSplit, GroupKFold, ShuffleSplit, StratifiedKFold
 from sklearn.preprocessing import LabelEncoder
+from sklearn.model_selection import GroupShuffleSplit
 from scipy import stats
 import copy
 import sys
@@ -121,7 +122,7 @@ def load_data_modeled(len_packet, num_of_packets=20):
 
 # EXTRACT FEATURES FOR EACH METHODOLOGY
 def generate_morfology(list_ecg, parameters, name):
-    morfology = fb.MorfologyDetector(a=parameters[:2],b=parameters[2:4],c=parameters[4:6] ,d=parameters[6:])
+    morfology = fb.MorfologyDetector(a=parameters[:2], b=parameters[2:4], c=parameters[4:6], d=parameters[6:])
     for sig in list_ecg:
         morfology.evaluete_signal(sig.input_signal,
                                   int(len(sig.input_signal)/2)+1,
@@ -252,12 +253,11 @@ def predict_from_multiple_estimator(estimators, label_encoder, X_list, weights =
     # Convert integer predictions to original labels:
     return label_encoder.inverse_transform(pred)
 
-def fit_ensemble_svc(X_train, X_test, y_train, y_test, number_cls,
-                    r, nfolds=5, test_size=0.33, metric='accuracy'):
+def fit_ensemble_svc(X_train, X_test, y_train, y_test, number_cls=15,
+                    r=42, nfolds=5, test_size=0.2, metric='accuracy'):
 
-    sss = StratifiedShuffleSplit(n_splits=nfolds,
-                                 test_size=test_size,
-                                 random_state=r)
+    sss = StratifiedKFold(n_splits=nfolds,
+                          random_state=r)
      # Set the parameters by cross-validation
     tuned_parameters = [{'kernel': ['rbf'], 'gamma': [2**(i-15) for i in range(0, 19, 2)],
                         'C': [2**(i-5) for i in range(0, 21, 2)]},
@@ -293,19 +293,17 @@ def fit_multiple_estimators(classifiers, X_list, y, sample_weights = None):
     return estimators_, le_
 
 
-def svc_param_selection(X_train, X_test, y_train, y_test, r,
-                        nfolds=5, test_size=0.33, metric='accuracy'):
+def svc_param_selection(X_train, X_test, y_train, y_test, r=42,
+                        nfolds=5, test_size=0.2, metric='accuracy'):
 
-    sss = StratifiedShuffleSplit(n_splits=nfolds,
-                                 test_size=test_size,
-                                 random_state=r)
+    sss = StratifiedKFold(n_splits=nfolds,
+                          random_state=r)
     # Set the parameters by cross-validation
     tuned_parameters = [{'kernel': ['rbf'], 'gamma': [2**(i-15) for i in range(0, 19, 2)],
                          'C': [2**(i-5) for i in range(0, 21, 2)]},
                         {'kernel': ['linear'], 'C': [2**(i-5) for i in range(0, 21, 2)]}]
 
-    clf = GridSearchCV(SVC(), tuned_parameters, cv=sss,
-                       scoring=metric)
+    clf = GridSearchCV(SVC(), tuned_parameters, cv=sss, scoring=metric)
     clf.fit(X_train, y_train)
 #    y_true, y_pred = y_test, clf.predict(X_test)
     return clf.score(X_test, y_test)
@@ -338,31 +336,38 @@ def get_mix(x_a, y_a, x_b, y_b, x_b_raw, percent):
     return np.array(x_a), np.array(x_b), np.array(y_a), np.array(y_b)
 
 ##########################Check sanity##########################################33
-def evaluete_sanity(name, func_eval, random_vector, func_load=default_load):
+def evaluete_sanity(name, func_eval, random_vector, func_load=default_load, n=10):
     X = func_load(name)
     target = X[:, -1]
     X = X[:, :-1]
-    X_train, X_test, y_train, y_test = train_test_split(X, target, test_size=0.33, random_state=42)
+    results = []
+    # 10 signals for 4 morfologies
+    size = int(len(X)/40)
+    groups = [np.ones(size) * i for i in range(40)]
+    groups = np.concatenate(groups)
+    gss = GroupShuffleSplit(n_splits=n, train_size=.66, random_state=42)
+    for i, (train_idx, test_idx) in enumerate(gss.split(X, target, groups)):
+        result = func_eval(X[train_idx, :], X[test_idx, :], target[train_idx], target[test_idx])
+        results.append(result)
+    return results
 
-    return func_eval(X_train,
-                     X_test,
-                     y_train,
-                     y_test,
-                     random_vector)
-
-def evaluete_sanity_with_parameters(name, func_eval, parameters, random_vector, func_load=default_load):
+def evaluete_sanity_with_parameters(name, func_eval, parameters, random_vector, func_load=default_load, n=10):
     results = []
     for p in parameters:
         X = func_load(name + "".join([str(x) for x in p]))
         target = X[:, -1]
         X = X[:, :-1]
-        X_train, X_test, y_train, y_test = train_test_split(X, target, test_size=0.33, random_state=42)
 
-        results.append(func_eval(X_train,
-                                 X_test,
-                                 y_train,
-                                 y_test,
-                                 random_vector))
+        # 10 signals for 4 morfologies
+        size = int(len(X) / 40)
+        groups = [np.ones(size) * i for i in range(40)]
+        groups = np.concatenate(groups)
+        gss = GroupShuffleSplit(n_splits=n, train_size=.66, random_state=42)
+        parcial_results = []
+        for i, (train_idx, test_idx) in enumerate(gss.split(X, target, groups)):
+            result = func_eval(X[train_idx, :], X[test_idx, :], target[train_idx], target[test_idx], 42)
+            parcial_results.append(result)
+        results.append(parcial_results)
     mean_results = [np.mean(x) for x in results]
     idx = np.argmax(mean_results)
     return parameters[idx], results[idx]
@@ -438,27 +443,6 @@ def load_generic(name, second_name="",load_function=restore_model):
     return aux_load_generict
 
 
-
-# def evaluate_methodology(func_load, func_evaluate, noises, target, target2,
-#                          target_test, training_real=False):
-#     results = []
-#     x_test = func_load('real_test')
-#
-#     for noise in noises:
-#         x_train = func_load('artificial', noise)
-#         if training_real:
-#             x_train_real = func_load('real_train')
-#             x_train = np.concatenate([x_train, x_train_real])
-#             input_target = target.copy()
-#             input_target.extend(target2)
-#         else:
-#             input_target = target
-#         results.append(func_evaluate(x_train,
-#                                      x_test,
-#                                      input_target,
-#                                      target_test))
-#     return results
-
 def evaluate_methodology(func_load, func_evaluate, noises, random_vector):
     results = []
     data = func_load('real_test')
@@ -476,11 +460,11 @@ def evaluate_methodology(func_load, func_evaluate, noises, random_vector):
     return results
 
 ################Func Evaluation####################333
-def evaluete_model_ensemble(number_cls):
+def evaluete_model_ensemble(number_cls=15):
     
     def aux_evaluete_model_ensemble(X_train, X_test, y_train, y_test, random_vector):
         result = []
-        for i in range(5):
+        for i in range(10):
                 result.append(fit_ensemble_svc(X_train, X_test,
                                                y_train, y_test,
                                                number_cls,
@@ -488,7 +472,7 @@ def evaluete_model_ensemble(number_cls):
         return result
     return aux_evaluete_model_ensemble
 
-def evaluete_model(X_train, X_test, y_train, y_test, random_vector, n=5):
+def evaluete_model(X_train, X_test, y_train, y_test, random_vector, n=10):
     result = []
 
     for i in range(n):
@@ -582,41 +566,42 @@ if __name__ == '__main__':
     # create_models(data_modeled, generate_hermite, [offset], noises, smooth_signal=smooth_signal)
 
 
-    selected_morfo, morfo_xp1 = evaluete_sanity_with_parameters('models/morfology_model_0',
-                                                                parameters=morfology_parameters,
-                                                                random_vector=random_vector,
-                                                                func_eval=evaluete_model)
-    selected_wavelet, wave_xp1 = evaluete_sanity_with_parameters('models/wavelet_model_0',
-                                                                parameters=wavelets_parameters,
-                                                                random_vector=random_vector,
-                                                                func_eval=evaluete_model)
+    # selected_morfo, morfo_xp1 = evaluete_sanity_with_parameters('models/morfology_model_0',
+    #                                                             parameters=morfology_parameters,
+    #                                                             random_vector=random_vector,
+    #                                                             func_eval=svc_param_selection)
+    # selected_wavelet, wave_xp1 = evaluete_sanity_with_parameters('models/wavelet_model_0',
+    #                                                             parameters=wavelets_parameters,
+    #                                                             random_vector=random_vector,
+    #                                                             func_eval=svc_param_selection)
 
-    # random_xp1 = evaluete_sanity('models/random_model_0', random_vector=random_vector,func_eval=func_eval_random)
-    mathe_xp1 = evaluete_sanity('models/m_model_0', func_eval=evaluete_model, random_vector=random_vector, func_load=load_mathematical)
-    lbp_xp1 = evaluete_sanity('models/lbp_model_0', random_vector=random_vector, func_eval=evaluete_model)
-    ulbp_xp1 = evaluete_sanity('models/ulbp_model_0', random_vector=random_vector, func_eval=evaluete_model)
-    hos_xp1 = evaluete_sanity('models/hos_model_0', random_vector=random_vector, func_eval=evaluete_model)
-    wavelet_db1_xp1 = evaluete_sanity('models/wavelet_db1_model_0', random_vector=random_vector, func_eval=evaluete_model)
-    hermite_xp1 = evaluete_sanity('models/hermite_model_0', random_vector=random_vector, func_eval=evaluete_model)
-
-    print("Wavelets")
-    print_status(wave_xp1)
-    print("Morfologie")
-    print_status(morfo_xp1)
+    # random_xp1 = evaluete_sanity('models/random_model_0', random_vector=random_vector,
+    #                              func_eval=fit_ensemble_svc)
+    # mathe_xp1 = evaluete_sanity('models/m_model_0', func_eval=svc_param_selection, random_vector=random_vector, func_load=load_mathematical)
+    # lbp_xp1 = evaluete_sanity('models/lbp_model_0', random_vector=random_vector, func_eval=svc_param_selection)
+    # ulbp_xp1 = evaluete_sanity('models/ulbp_model_0', random_vector=random_vector, func_eval=svc_param_selection)
+    # hos_xp1 = evaluete_sanity('models/hos_model_0', random_vector=random_vector, func_eval=svc_param_selection)
+    # wavelet_db1_xp1 = evaluete_sanity('models/wavelet_db1_model_0', random_vector=random_vector, func_eval=svc_param_selection)
+    # hermite_xp1 = evaluete_sanity('models/hermite_model_0', random_vector=random_vector, func_eval=svc_param_selection)
+    #
+    # print("Wavelets")
+    # print_status(wave_xp1)
+    # print("Morfologie")
+    # print_status(morfo_xp1)
     # print("Random")
     # print_status(random_xp1)
-    print("Matemathical")
-    print_status(mathe_xp1)
-    print("lbp")
-    print_status(lbp_xp1)
-    print("ulbp")
-    print_status(ulbp_xp1)
-    print("hos")
-    print_status(hos_xp1)
-    print("wavelet_db1")
-    print_status(wavelet_db1_xp1)
-    print("hermite")
-    print_status(hermite_xp1)
+    # print("Matemathical")
+    # print_status(mathe_xp1)
+    # print("lbp")
+    # print_status(lbp_xp1)
+    # print("ulbp")
+    # print_status(ulbp_xp1)
+    # print("hos")
+    # print_status(hos_xp1)
+    # print("wavelet_db1")
+    # print_status(wavelet_db1_xp1)
+    # print("hermite")
+    # print_status(hermite_xp1)
 
     # create mix data
     # create_models(mix_data, generate_morfology, [selected_morfo], [0], '_real', smooth_signal=smooth_signal)
@@ -633,13 +618,13 @@ if __name__ == '__main__':
     #                                  evaluete_model, noises, random_vector)
     # wave_xp2 = evaluate_methodology(load_generic('wavelet', "".join([str(x) for x in selected_wavelet])),
     #                                 evaluete_model, noises, random_vector)
-    # mathe_xp2 = evaluate_methodology(load_mathematical, evaluete_model, noises, random_vector)
+    mathe_xp2 = evaluate_methodology(load_mathematical, evaluete_model, noises, random_vector)
     # random_xp2 = evaluate_methodology(load_generic('random'), func_eval_random, noises, random_vector)
     # lbp_xp2 = evaluate_methodology(load_generic('lbp'), evaluete_model, noises, random_vector)
     # hos_xp2 = evaluate_methodology(load_generic('hos'), evaluete_model, noises, random_vector)
     # ulbp_xp2 = evaluate_methodology(load_generic('ulbp'), evaluete_model, noises, random_vector)
     # wavelet_db1_xp2 = evaluate_methodology(load_generic('wavelet_db1'), evaluete_model, noises, random_vector)
-    # hermite_xp2 = evaluate_methodology(load_generic('hermite'), evaluete_model, noises, random_vector)
+    hermite_xp2 = evaluate_methodology(load_generic('hermite'), evaluete_model, noises, random_vector)
 
 
     # print("Morfologie")
@@ -648,8 +633,6 @@ if __name__ == '__main__':
     # for x in  wave_xp2: print_status(x)
     # print("Random")
     # for x in  random_xp2: print_status(x)
-    # print("Matemathical")
-    # for x in  mathe_xp2: print_status(x)
     # print("lbp")
     # for x in lbp_xp2: print_status(x)
     # print("ulbp")
@@ -658,8 +641,10 @@ if __name__ == '__main__':
     # for x in hos_xp2: print_status(x)
     # print("wavelet_db1")
     # for x in wavelet_db1_xp2: print_status(x)
-    # print("hermite")
-    # for x in hermite_xp2: print_status(x)
+    print("Matemathical")
+    for x in mathe_xp2: print_status(x)
+    print("hermite")
+    for x in hermite_xp2: print_status(x)
 
 
 
