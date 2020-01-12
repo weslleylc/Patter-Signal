@@ -492,7 +492,7 @@ class ECG(DefaultSignal):
         packets = []
         for (ind, label) in zip(self.indicators, self.labels):
             packets.append(container(self.input_signal[(
-                           ind-bandwidth):(ind+bandwidth)],
+                           ind-bandwidth):(ind+bandwidth+1)],
                            bandwidth, label))
         self.packets = packets
         return self.packets

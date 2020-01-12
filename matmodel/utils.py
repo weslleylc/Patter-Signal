@@ -71,6 +71,17 @@ def mp_fit_cls(function, estimators, X, y, workers=2):
     pool.close()
     return result
 
+def mp_fit_cls(function, estimators, X, y, workers=2):
+
+    with mp.Pool(processes=workers) as pool:
+        result = pool.map(function, [(estimators[index],
+                                     X[index], y.copy())
+                          for index in range(len(estimators))])
+    pool.close()
+    return result
+
+
+
 
 def mp_signal_apply(function, packets_of_signals,
                     list_of_evaluetor, workers=2):
